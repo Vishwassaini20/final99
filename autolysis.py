@@ -159,29 +159,30 @@ def create_visualizations(df):
 
 
 # Function to generate GPT-4o-Mini analysis story
+# Function to generate GPT-4o-Mini analysis story with custom prompt
 def generate_analysis_story(summary, outliers, correlation_matrix):
     # Prepare the prompt with the data
     prompt = f"""
-    Given the following dataset summary:
-    - Shape: {summary['shape']}
-    - Columns: {', '.join(summary['columns'])}
-    - Data Types: {summary['types']}
-    - Descriptive Statistics: {summary['descriptive_statistics']}
-    - Missing values: {summary['missing_values']}
-
-    Additionally, the outliers detected are: {outliers}
-
-    The correlation matrix of the dataset is:
-    {correlation_matrix}
-
-    #Generate a detailed, insightful analysis of the dataset. Include an interpretation of the statistics, correlations, outliers, and any recommendations for further analysis. Additionally, narrate the findings in a story-like manner to convey the insights effectively.
-     Below is a detailed summary and analysis of a dataset. Please generate a **rich and engaging narrative** about this dataset analysis, including:
-
+    Below is a detailed summary and analysis of a dataset. Please generate a **rich and engaging narrative** about this dataset analysis, including:
+    
     1. **The Data Received**: Describe the dataset vividly. What does the data represent? What are its features? What is the significance of this data? Create a compelling story around it.
     2. **The Analysis Carried Out**: Explain the analysis methods used. Highlight techniques like missing value handling, outlier detection, clustering, and dimensionality reduction (PCA). How do these methods provide insights?
     3. **Key Insights and Discoveries**: What were the major findings? What trends or patterns emerged that can be interpreted as discoveries? Were there any unexpected results?
     4. **Implications and Actions**: Discuss the implications of these findings. How do they influence decisions? What actionable recommendations would you provide based on the analysis?
     5. **Visualizations**: Describe the visualizations included. What do they reveal about the data? How do they complement the analysis and findings?
+
+    Dataset Summary:
+    - Shape: {summary['shape']}
+    - Columns: {', '.join(summary['columns'])}
+    - Data Types: {summary['types']}
+    - Descriptive Statistics: {summary['descriptive_statistics']}
+    - Missing Values: {summary['missing_values']}
+
+    Outliers detected:
+    {outliers}
+
+    Correlation Matrix:
+    {correlation_matrix}
     """
 
     # Call OpenAI API (GPT-4 or GPT-4o-Mini) to generate the story
@@ -204,6 +205,7 @@ def generate_analysis_story(summary, outliers, correlation_matrix):
         return "Error generating analysis story"
     
     return story
+
 
 # Function to write the README with analysis story and results
 def write_readme(summary, outliers, correlation_matrix, visualizations, story, filename):
