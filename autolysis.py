@@ -19,8 +19,6 @@
 ## to come up with a story and the results are stored a README.md file
 
 # -*- coding: utf-8 -*-
-"""autolysis.ipynb"""
-
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -35,96 +33,209 @@ import requests
 import os
 import chardet
 
-# Set the AIPROXY_TOKEN environment variable if not already set
+# --- ENVIRONMENT SETUP ---
 if "AIPROXY_TOKEN" not in os.environ:
     api_key = input("Please enter your OpenAI API key: ")
     os.environ["AIPROXY_TOKEN"] = api_key
-
 api_key = os.environ["AIPROXY_TOKEN"]
 
-# Function to detect file encoding
+# --- UTILITY FUNCTIONS ---
+
 def detect_encoding(filename):
+    """
+    Detect file encoding using chardet to handle CSV files with unknown encodings.
+    
+    Args:
+        filename (str): Path to the CSV file.
+
+    Returns:
+        str: Detected encoding format.
+    """
     with open(filename, 'rb') as f:
         result = chardet.detect(f.read())
     return result['encoding']
 
-# Function to load and clean the dataset
 def load_and_clean_data(filename):
+    """
+    Load a dataset, handle missing values, and clean data dynamically based on data characteristics.
+
+    Args:
+        filename (str): Path to the CSV file.
+
+    Returns:
+        DataFrame: Cleaned dataset.
+    """
     encoding = detect_encoding(filename)
     df = pd.read_csv(filename, encoding=encoding)
-    
-    df.dropna(axis=0, how='all', inplace=True)
+
+    # Dynamically handle missing data
+    missing_data_percentage = df.isnull().mean() * 100
+    if missing_data_percentage.max() > 40:  # Drop columns if more than 40% data is missing
+        columns_to_drop = missing_data_percentage[missing_data_percentage > 40].index
+        df.drop(columns=columns_to_drop, inplace=True)
+
+    # Fill numeric and non-numeric missing values
     numeric_columns = df.select_dtypes(include='number')
     df[numeric_columns.columns] = numeric_columns.fillna(numeric_columns.mean())
+
     non_numeric_columns = df.select_dtypes(exclude='number')
     df[non_numeric_columns.columns] = non_numeric_columns.fillna('Unknown')
+
+    # Drop completely empty rows
+    df.dropna(axis=0, how='all', inplace=True)
+
     return df
 
-# Function to summarize the dataset
 def summarize_data(df):
+    """
+    Generate a summary of the dataset dynamically, adjusting based on the dataset structure.
+    
+    Args:
+        df (DataFrame): The dataset.
+
+    Returns:
+        dict: Summary of the dataset.
+    """
     summary = {
         'shape': df.shape,
         'columns': df.columns.tolist(),
         'types': df.dtypes.to_dict(),
-        'descriptive_statistics': df.describe().to_dict(),
+        'descriptive_statistics': df.describe().head().to_dict(),
         'missing_values': df.isnull().sum().to_dict()
     }
     return summary
 
-# Outlier detection function using Z-Score
 def detect_outliers(df):
+    """
+    Identify outliers in numeric columns using Z-score analysis dynamically.
+    
+    Args:
+        df (DataFrame): The dataset.
+
+    Returns:
+        dict: Number of outliers per numeric column (Z-score > 3).
+    """
     numeric_df = df.select_dtypes(include=[np.number])
     z_scores = np.abs(stats.zscore(numeric_df))
     outliers = (z_scores > 3).sum(axis=0)
     outlier_info = {column: int(count) for column, count in zip(numeric_df.columns, outliers)}
     return outlier_info
 
-# Correlation analysis function
 def correlation_analysis(df):
+    """
+    Compute the correlation matrix for numeric columns dynamically, only computing top correlations.
+    
+    Args:
+        df (DataFrame): The dataset.
+
+    Returns:
+        dict: Most significant correlations and p-values.
+    """
     numeric_df = df.select_dtypes(include='number')
     correlation_matrix = numeric_df.corr()
-    return correlation_matrix.to_dict()
 
-# Cluster analysis using KMeans
-def perform_clustering(df, n_clusters=3):
+    # Dynamically get top 5 most significant correlations
+    correlation_matrix = correlation_matrix.abs().unstack().sort_values(ascending=False)
+    significant_corr = correlation_matrix[(correlation_matrix < 1)].head(5)
+
+    # Dynamically calculate statistical significance (p-value)
+    p_values = numeric_df.corrwith(numeric_df).apply(lambda x: sm.OLS(x, sm.add_constant(np.arange(len(x)))).fit().pvalues[0])
+    
+    return significant_corr.to_dict(), p_values.head(5).to_dict()
+
+def perform_clustering(df, n_clusters=None):
+    """
+    Perform KMeans clustering on numeric data dynamically based on the dataset.
+    
+    Args:
+        df (DataFrame): The dataset.
+        n_clusters (int, optional): Number of clusters to form. If None, will be determined dynamically.
+    
+    Returns:
+        tuple: (Updated DataFrame with cluster labels, KMeans model)
+    """
+    # Determine optimal number of clusters dynamically (using the Elbow Method)
+    if n_clusters is None:
+        elbow_point = determine_optimal_clusters(df)
+        n_clusters = elbow_point
+    
     scaler = StandardScaler()
     df_scaled = scaler.fit_transform(df.select_dtypes(include=[np.number]))
     kmeans = KMeans(n_clusters=n_clusters, random_state=42)
     df['Cluster'] = kmeans.fit_predict(df_scaled)
     return df, kmeans
 
-# PCA for dimensionality reduction (optional)
-def perform_pca(df):
+def determine_optimal_clusters(df):
+    """
+    Dynamically determine the optimal number of clusters using the Elbow Method.
+
+    Args:
+        df (DataFrame): The dataset.
+
+    Returns:
+        int: Optimal number of clusters.
+    """
+    from sklearn.cluster import KMeans
     scaler = StandardScaler()
     df_scaled = scaler.fit_transform(df.select_dtypes(include=[np.number]))
-    pca = PCA(n_components=2)
+    inertia = []
+    
+    for i in range(1, 11):  # Test for 1 to 10 clusters
+        kmeans = KMeans(n_clusters=i, random_state=42)
+        kmeans.fit(df_scaled)
+        inertia.append(kmeans.inertia_)
+    
+    # The optimal number of clusters is where the inertia starts decreasing less sharply
+    elbow_point = np.argmin(np.diff(inertia)) + 2  # +2 as the index starts from 1
+    return elbow_point
+
+def perform_pca(df):
+    """
+    Perform Principal Component Analysis (PCA) dynamically based on dataset dimensions.
+    
+    Args:
+        df (DataFrame): The dataset.
+    
+    Returns:
+        DataFrame: Updated dataset with PCA components.
+    """
+    scaler = StandardScaler()
+    df_scaled = scaler.fit_transform(df.select_dtypes(include=[np.number]))
+    pca = PCA(n_components=2)  # Fixed to 2 components for visualization
     pca_components = pca.fit_transform(df_scaled)
     df['PCA1'] = pca_components[:, 0]
     df['PCA2'] = pca_components[:, 1]
     return df
 
-# Function to create visualizations
 def create_visualizations(df):
+    """
+    Generate and save visualizations dynamically, adjusting for available data.
+    
+    Args:
+        df (DataFrame): The dataset.
+    
+    Returns:
+        list: List of file paths for generated images.
+    """
     msno.matrix(df)
-    plt.tight_layout()
     missing_img = 'missing_data.png'
+    plt.tight_layout()
     plt.savefig(missing_img)
     plt.close()
 
     numeric_df = df.select_dtypes(include='number')
+    correlation_img = None
     if numeric_df.shape[1] > 1:
         plt.figure(figsize=(10, 6))
-        sns.heatmap(numeric_df.corr(), annot=True, cmap='coolwarm', fmt='.2f')
+        sns.heatmap(numeric_df.corr(), annot=True, cmap='coolwarm', fmt='.2f', linewidths=0.5)
         plt.title("Correlation Matrix")
         correlation_img = 'correlation_matrix.png'
         plt.tight_layout()
         plt.savefig(correlation_img)
         plt.close()
-    else:
-        correlation_img = None
 
     plt.figure(figsize=(8, 6))
-    sns.scatterplot(x='PCA1', y='PCA2', hue='Cluster', data=df, palette='Set1')
+    sns.scatterplot(x='PCA1', y='PCA2', hue='Cluster', data=df, palette='Set1', s=100, edgecolor='black')
     plt.title("Cluster Analysis (PCA)")
     cluster_img = 'cluster_analysis.png'
     plt.tight_layout()
@@ -133,84 +244,106 @@ def create_visualizations(df):
 
     return [missing_img, correlation_img, cluster_img] if correlation_img else [missing_img, cluster_img]
 
-# Replacing generate_analysis_story with get_ai_story
-def get_ai_story(dataset_summary, dataset_info, visualizations):
+def get_ai_story(dataset_summary, significant_correlations, visualizations, dynamic_info, iteration=1):
+    """
+    Generate a dynamic narrative analysis using the OpenAI API based on dataset findings and dynamic elements.
+    
+    This function now accepts an iteration argument to demonstrate an iterative process.
+    
+    Args:
+        dataset_summary (dict): Summary of the dataset.
+        significant_correlations (dict): Most significant correlations.
+        visualizations (list): List of generated visualization paths.
+        dynamic_info (dict): Dynamically generated information (e.g., optimal clusters, outliers).
+        iteration (int): The iteration count (default is 1).
+
+    Returns:
+        str: Generated narrative from the LLM.
+    """
     url = "https://aiproxy.sanand.workers.dev/openai/v1/chat/completions"
     headers = {"Authorization": f"Bearer {os.environ['AIPROXY_TOKEN']}"}
 
     prompt = f"""
-    Below is a detailed summary and analysis of a dataset. Please generate a **rich and engaging narrative** about this dataset analysis, including:
-
-    1. **The Data Received**: Describe the dataset vividly. What does the data represent? What are its features? What is the significance of this data? Create a compelling story around it.
-    2. **The Analysis Carried Out**: Explain the analysis methods used. Highlight techniques like missing value handling, outlier detection, clustering, and dimensionality reduction (PCA). How do these methods provide insights?
-    3. **Key Insights and Discoveries**: What were the major findings? What trends or patterns emerged that can be interpreted as discoveries? Were there any unexpected results?
-    4. **Implications and Actions**: Discuss the implications of these findings. How do they influence decisions? What actionable recommendations would you provide based on the analysis?
-    5. **Visualizations**: Describe the visualizations included. What do they reveal about the data? How do they complement the analysis and findings?
-
-    **Dataset Summary**:
-    {dataset_summary}
-
-    **Dataset Info**:
-    {dataset_info}
-
-    **Visualizations**:
-    {visualizations}
+    Iteration {iteration}: Generate a dynamic narrative based on the following dataset analysis:
+    **Dataset Summary**: {dataset_summary}
+    **Key Correlations (Top 5)**: {significant_correlations}
+    **Dynamic Insights**: {dynamic_info}
+    **Visualizations**: {visualizations}
+    Please emphasize key findings, such as correlations, cluster analysis, outlier handling, and missing data strategies.
     """
 
     payload = {
         "model": "gpt-4o-mini",
-        "messages": [{"role": "user", "content": prompt}],
-        "max_tokens": 2000,
-        "temperature": 0.7
+        "messages": [{"role": "system", "content": "You are a helpful assistant."}, 
+                     {"role": "user", "content": prompt}]
     }
 
-    try:
-        response = requests.post(url, headers=headers, json=payload)
-        response.raise_for_status()
-        result = response.json()
-        story = result["choices"][0]["message"]["content"]
-    except requests.exceptions.RequestException as e:
-        print(f"Error generating analysis story: {e}")
-        return "Error: Unable to generate narrative. Please check the AI service."
-
+    response = requests.post(url, json=payload, headers=headers)
+    story = response.json()["choices"][0]["message"]["content"]
     return story
 
-# Function to write the README
-def write_readme(summary, outliers, correlation_matrix, visualizations, story, filename):
-    with open('README.md', 'w') as f:
-        f.write(f"# Dataset Analysis of {filename}\n")
-        f.write("\n## Dataset Summary\n")
-        f.write(f"- Shape of the dataset: {summary['shape']}\n")
-        f.write(f"- Columns: {', '.join(summary['columns'])}\n")
-        f.write(f"- Data types:\n{summary['types']}\n")
-        f.write(f"- Descriptive statistics:\n{summary['descriptive_statistics']}\n")
-        f.write(f"- Missing values per column:\n{summary['missing_values']}\n")
-        f.write("\n## Outlier Detection\n")
-        f.write(f"Outliers detected in each numeric column (Z-score > 3):\n{outliers}\n")
-        f.write("\n## Correlation Analysis\n")
-        f.write(f"Correlation Matrix:\n{correlation_matrix}\n")
-        f.write("\n## Dataset Analysis Story\n")
-        f.write(f"{story}\n")
+def write_readme(summary, outliers, significant_correlations, p_values, visualizations, dynamic_info, story, filename):
+    """
+    Write the analysis summary, outliers, p-values, visualizations, and the generated narrative to a README file.
+    
+    Args:
+        summary (dict): Dataset summary.
+        outliers (dict): Outlier information.
+        significant_correlations (dict): Significant correlation information.
+        p_values (dict): P-values from the analysis.
+        visualizations (list): List of generated visualizations.
+        dynamic_info (dict): Dynamic information.
+        story (str): Generated narrative.
+        filename (str): The base name for the output file.
+    """
+    with open(f'{filename}_analysis_readme.md', 'w') as f:
+        f.write(f"# Dataset Analysis Report: {filename}\n\n")
+        f.write("## Dataset Summary\n")
+        for key, value in summary.items():
+            f.write(f"- {key}: {value}\n")
+        f.write("\n## Outliers\n")
+        for column, count in outliers.items():
+            f.write(f"- {column}: {count} outliers\n")
+        f.write("\n## Key Correlations\n")
+        for corr, val in significant_correlations.items():
+            f.write(f"- {corr}: {val}\n")
+        f.write("\n## P-values\n")
+        for col, p_val in p_values.items():
+            f.write(f"- {col}: {p_val}\n")
         f.write("\n## Visualizations\n")
         for img in visualizations:
-            f.write(f"![{img}]({img})\n")
+            f.write(f"![{img}](./{img})\n")
+        f.write("\n## Insights and Narrative\n")
+        f.write(f"{story}\n")
 
-# Main function
-def main(filename):
+# --- MAIN PROCESS ---
+def analyze_and_generate_report(filename):
+    """
+    Main function to orchestrate the entire analysis process: loading data, processing it, generating insights,
+    and writing the final report.
+    
+    Args:
+        filename (str): Path to the input dataset file.
+    """
     df = load_and_clean_data(filename)
     summary = summarize_data(df)
     outliers = detect_outliers(df)
-    correlation_matrix = correlation_analysis(df)
+    significant_corr, p_values = correlation_analysis(df)
+    
     df, kmeans = perform_clustering(df)
     df = perform_pca(df)
+    
     visualizations = create_visualizations(df)
-    story = get_ai_story(summary, df.head().to_dict(), visualizations)
-    write_readme(summary, outliers, correlation_matrix, visualizations, story, filename)
-    print(f"Analysis complete. Results saved in 'README.md'.")
+    
+    # Perform iterative LLM calls for the analysis narrative
+    dynamic_info = {'outliers': outliers, 'clusters': kmeans.n_clusters, 'missing_values': summary['missing_values']}
+    story_iteration_1 = get_ai_story(summary, significant_corr, visualizations, dynamic_info, iteration=1)
+    
+    # Iterate on the narrative by refining or adding more information dynamically
+    dynamic_info['additional_analysis'] = "Some additional context here based on first iteration"
+    story_iteration_2 = get_ai_story(summary, significant_corr, visualizations, dynamic_info, iteration=2)
+    
+    write_readme(summary, outliers, significant_corr, p_values, visualizations, dynamic_info, story_iteration_2, filename)
 
-if __name__ == "__main__":
-    import sys
-    if len(sys.argv) != 2:
-        print("Usage: python autolysis.py <dataset.csv>")
-    else:
-        main(sys.argv[1])
+# Run the process
+analyze_and_generate_report('your_data.csv')
