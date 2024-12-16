@@ -1,23 +1,3 @@
-# /// script
-# requires-python = ">=3.12"
-# dependencies = [
-#     "chardet",
-#     "matplotlib",
-#     "pandas",
-#     "statsmodels",
-#     "scikit-learn",
-#     "missingno",
-#     "python-dotenv",
-#     "requests",
-#     "seaborn",
-# ]
-# ///
-
-
-## This script does generic analysis which includes summarization, cluster analysis, Correlation analysis,
-## outlier analysis along with Visulization using python of any csv files and results of this analysis is shared with LLM Model
-## to come up with a story and the results are stored a README.md file
-
 # -*- coding: utf-8 -*-
 import pandas as pd
 import numpy as np
@@ -32,6 +12,7 @@ from scipy import stats
 import requests
 import os
 import chardet
+import sys
 
 # --- ENVIRONMENT SETUP ---
 if "AIPROXY_TOKEN" not in os.environ:
@@ -248,8 +229,6 @@ def get_ai_story(dataset_summary, significant_correlations, visualizations, dyna
     """
     Generate a dynamic narrative analysis using the OpenAI API based on dataset findings and dynamic elements.
     
-    This function now accepts an iteration argument to demonstrate an iterative process.
-    
     Args:
         dataset_summary (dict): Summary of the dataset.
         significant_correlations (dict): Most significant correlations.
@@ -279,71 +258,34 @@ def get_ai_story(dataset_summary, significant_correlations, visualizations, dyna
     }
 
     response = requests.post(url, json=payload, headers=headers)
-    story = response.json()["choices"][0]["message"]["content"]
-    return story
+    return response.json()['choices'][0]['message']['content']
 
-def write_readme(summary, outliers, significant_correlations, p_values, visualizations, dynamic_info, story, filename):
+def main(dataset_name):
     """
-    Write the analysis summary, outliers, p-values, visualizations, and the generated narrative to a README file.
-    
+    Main function to load the dataset, clean, analyze, visualize, and generate insights dynamically.
+
     Args:
-        summary (dict): Dataset summary.
-        outliers (dict): Outlier information.
-        significant_correlations (dict): Significant correlation information.
-        p_values (dict): P-values from the analysis.
-        visualizations (list): List of generated visualizations.
-        dynamic_info (dict): Dynamic information.
-        story (str): Generated narrative.
-        filename (str): The base name for the output file.
+        dataset_name (str): Dataset file name (without extension).
     """
-    with open(f'{filename}_analysis_readme.md', 'w') as f:
-        f.write(f"# Dataset Analysis Report: {filename}\n\n")
-        f.write("## Dataset Summary\n")
-        for key, value in summary.items():
-            f.write(f"- {key}: {value}\n")
-        f.write("\n## Outliers\n")
-        for column, count in outliers.items():
-            f.write(f"- {column}: {count} outliers\n")
-        f.write("\n## Key Correlations\n")
-        for corr, val in significant_correlations.items():
-            f.write(f"- {corr}: {val}\n")
-        f.write("\n## P-values\n")
-        for col, p_val in p_values.items():
-            f.write(f"- {col}: {p_val}\n")
-        f.write("\n## Visualizations\n")
-        for img in visualizations:
-            f.write(f"![{img}](./{img})\n")
-        f.write("\n## Insights and Narrative\n")
-        f.write(f"{story}\n")
+    file_path = f"{dataset_name}.csv"
+    df = load_and_clean_data(file_path)
+    
+    dataset_summary = summarize_data(df)
+    significant_correlations, p_values = correlation_analysis(df)
+    outlier_info = detect_outliers(df)
+    df_with_clusters, kmeans = perform_clustering(df)
+    df_with_pca = perform_pca(df_with_clusters)
 
-# --- MAIN PROCESS ---
-def analyze_and_generate_report(filename):
-    """
-    Main function to orchestrate the entire analysis process: loading data, processing it, generating insights,
-    and writing the final report.
-    
-    Args:
-        filename (str): Path to the input dataset file.
-    """
-    df = load_and_clean_data(filename)
-    summary = summarize_data(df)
-    outliers = detect_outliers(df)
-    significant_corr, p_values = correlation_analysis(df)
-    
-    df, kmeans = perform_clustering(df)
-    df = perform_pca(df)
-    
-    visualizations = create_visualizations(df)
-    
-    # Perform iterative LLM calls for the analysis narrative
-    dynamic_info = {'outliers': outliers, 'clusters': kmeans.n_clusters, 'missing_values': summary['missing_values']}
-    story_iteration_1 = get_ai_story(summary, significant_corr, visualizations, dynamic_info, iteration=1)
-    
-    # Iterate on the narrative by refining or adding more information dynamically
-    dynamic_info['additional_analysis'] = "Some additional context here based on first iteration"
-    story_iteration_2 = get_ai_story(summary, significant_corr, visualizations, dynamic_info, iteration=2)
-    
-    write_readme(summary, outliers, significant_corr, p_values, visualizations, dynamic_info, story_iteration_2, filename)
+    visualizations = create_visualizations(df_with_pca)
+    dynamic_info = {
+        'outliers': outlier_info,
+        'optimal_clusters': kmeans.n_clusters,
+        'significant_p_values': p_values
+    }
 
-# Run the process
-analyze_and_generate_report('your_data.csv')
+    narrative = get_ai_story(dataset_summary, significant_correlations, visualizations, dynamic_info)
+    print(narrative)
+
+if __name__ == "__main__":
+    dataset_name = sys.argv[1]
+    main(dataset_name)
