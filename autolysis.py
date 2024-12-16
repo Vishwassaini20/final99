@@ -1,3 +1,16 @@
+# requires-python = ">=3.12"
+# dependencies = [
+#     "chardet",
+#     "matplotlib",
+#     "pandas",
+#     "statsmodels",
+#     "scikit-learn",
+#     "missingno",
+#     "python-dotenv",
+#     "requests",
+#     "seaborn",
+# ]
+# ///
 # -*- coding: utf-8 -*-
 import pandas as pd
 import numpy as np
